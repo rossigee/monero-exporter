@@ -1,0 +1,23 @@
+# Binaries
+/monero-exporter
+/monero-exporter_*
+/monero-exporter-*
+
+# Build artifacts
+*.out
+*.html
+
+# Test / coverage
+coverage.out
+coverage.html
+
+# Security reports
+gosec-report.json
+
+# Go
+vendor/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

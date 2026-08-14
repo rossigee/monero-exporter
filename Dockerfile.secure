@@ -1,0 +1,58 @@
+# Multi-stage build with security hardening
+FROM golang:1.26-alpine AS build
+
+ARG TARGETARCH=amd64
+
+# Security: Create non-root user for build
+RUN adduser -D -g '' appuser
+
+# Security: Install only necessary packages
+RUN apk add --no-cache ca-certificates git
+
+# Set working directory
+WORKDIR /app
+
+# Copy dependency files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Security: Build with security flags
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -o monero-exporter ./cmd/monero-exporter
+
+# Final stage - minimal security-hardened image
+FROM scratch
+
+# Security: Import from builder for SSL/TLS certificates
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Security: Copy passwd for non-root user
+COPY --from=build /etc/passwd /etc/passwd
+
+# Copy binary
+COPY --from=build /app/monero-exporter /monero-exporter
+
+# Security: Use non-root user
+USER appuser
+
+# Security: Expose only necessary port
+EXPOSE 9000
+
+# Security: Use specific entrypoint
+ENTRYPOINT ["/monero-exporter"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["/monero-exporter", "--health-check"] || exit 1
+
+# Security labels
+LABEL maintainer="monero-exporter" \
+      description="Prometheus exporter for monerod" \
+      security.scan="enabled"
