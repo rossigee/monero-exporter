@@ -174,7 +174,7 @@ type GetInfoResult struct {
 	Offline              bool   `json:"offline"`
 	Synchronized         bool   `json:"synchronized"`
 	Mainnet              bool   `json:"mainnet"`
-	Version              uint64 `json:"version"`
+	Version              string `json:"version"`
 	IncomingConnections  uint64 `json:"incoming_connections_count"`
 	OutgoingConnections  uint64 `json:"outgoing_connections_count"`
 	RPCConnections       uint64 `json:"rpc_connections_count"`

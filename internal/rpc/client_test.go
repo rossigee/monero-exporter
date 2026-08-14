@@ -40,12 +40,15 @@ func TestGetInfo(t *testing.T) {
 		if req["method"] != "get_info" {
 			t.Errorf("method = %v, want get_info", req["method"])
 		}
-		_, _ = w.Write([]byte(`{"result":{"height":3215600,"target_height":3215600,"tx_pool_size":12,"synchronized":true,"mainnet":true,"restricted":true,"start_time":1700000000,"database_size":12345678,"free_space":1000000000}}`))
+		_, _ = w.Write([]byte(`{"result":{"version":"0.18.3.4-release","height":3215600,"target_height":3215600,"tx_pool_size":12,"synchronized":true,"mainnet":true,"restricted":true,"start_time":1700000000,"database_size":12345678,"free_space":1000000000}}`))
 	})
 
 	info, err := cli.GetInfo(context.Background())
 	if err != nil {
 		t.Fatalf("GetInfo: %v", err)
+	}
+	if info.Version != "0.18.3.4-release" {
+		t.Errorf("version = %q, want %q", info.Version, "0.18.3.4-release")
 	}
 	if info.Height != 3215600 {
 		t.Errorf("height = %d, want 3215600", info.Height)
