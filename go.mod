@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	github.com/prometheus/client_golang v1.24.1
-	github.com/sirupsen/logrus v1.10.0
+	github.com/sirupsen/logrus v1.10.1
 	github.com/spf13/cobra v1.10.2
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2
 )
