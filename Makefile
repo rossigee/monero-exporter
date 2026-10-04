@@ -10,6 +10,9 @@ MAIN=./cmd/monero-exporter
 BINARY_NAME=monero-exporter
 BINARY_UNIX=$(BINARY_NAME)_unix
 
+# Tool versions
+GOLANGCI_LINT_VERSION=v2.14.0
+
 # Build info
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
@@ -54,7 +57,7 @@ benchmark: ## Run benchmarks
 
 ## Quality
 lint: ## Run linter
-	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
 	golangci-lint run --timeout 5m
 
 lint-fix: ## Run linter with auto-fix
@@ -113,7 +116,7 @@ format: ## Format code
 	goimports -w .
 
 install-tools: ## Install development tools
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install golang.org/x/tools/cmd/goimports@latest
