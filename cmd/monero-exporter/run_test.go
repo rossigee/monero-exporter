@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rossigee/monero-exporter/internal/collector"
@@ -87,5 +90,88 @@ func TestHealthzEndpoint(t *testing.T) {
 	}
 	if body := rec.Body.String(); body != "ok" {
 		t.Errorf("body = %q, want ok", body)
+	}
+}
+
+// deadAddr returns an address on the loopback range that nothing is listening
+// on, so RPC calls to it fail fast with connection refused.
+func deadAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return addr
+}
+
+// TestRunExporterSurvivesUnreachableMonerod is the regression test for the
+// startup crash loop: monerod that is still loading its LMDB, restarting, or
+// briefly unreachable must not terminate the exporter. Before the fix the
+// startup ping returned an error, runExporter propagated it, and the process
+// exited 1 on every restart.
+func TestRunExporterSurvivesUnreachableMonerod(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	bindAddr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	cfg := config{
+		BindAddr:      bindAddr,
+		TelemetryPath: "/metrics",
+		MoneroAddr:    "http://" + deadAddr(t),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	log := logrus.New()
+	log.SetOutput(io.Discard)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- runExporter(ctx, cfg, log) }()
+
+	// The exporter must come up and answer /metrics despite the dead daemon.
+	var body string
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.Get("http://" + bindAddr + "/metrics")
+		if err == nil {
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			body = string(raw)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", resp.StatusCode)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("exporter never served /metrics: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Daemon health is reported as metrics, not as a dead process.
+	for _, want := range []string{"monero_up 0", "monero_scrape_error 1"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics output missing %q", want)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("runExporter returned %v, want clean shutdown", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("runExporter did not shut down after context cancellation")
 	}
 }

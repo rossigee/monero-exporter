@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,20 +15,25 @@ import (
 )
 
 // runExporter wires the RPC client, registers a single prometheus.Collector
-// implementation, and serves /metrics until a SIGINT/SIGTERM arrives.
-func runExporter(cfg config, log *logrus.Logger) error {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
+// implementation, and serves /metrics until ctx is cancelled. The caller owns
+// ctx so tests can drive shutdown without signalling the test binary.
+func runExporter(ctx context.Context, cfg config, log *logrus.Logger) error {
 	cli, err := rpc.New(cfg.MoneroAddr, cfg.RPCUser, cfg.RPCPassword, log)
 	if err != nil {
 		return fmt.Errorf("rpc client: %w", err)
 	}
 
+	// An unreachable monerod must not terminate the exporter. monerod can be
+	// mid-startup (loading the LMDB takes minutes), restarting, or briefly
+	// unreachable, and the collector already encodes daemon health as metrics
+	// (monero_up, monero_scrape_error) while Refresh re-runs on every scrape.
+	// Exiting here would discard that signal and turn a transient blip into an
+	// outage, so warn and keep serving; the exporter recovers on its own as soon
+	// as the daemon answers.
 	pingCtx, pingCancel := context.WithTimeout(ctx, 15*time.Second)
 	if err := cli.Ping(pingCtx); err != nil {
-		pingCancel()
-		return fmt.Errorf("rpc ping: %w", err)
+		log.WithError(err).WithField("monero_addr", cfg.MoneroAddr).
+			Warn("initial monerod RPC ping failed; serving metrics with monero_up 0 until the daemon recovers")
 	}
 	pingCancel()
 
@@ -50,7 +53,10 @@ func runExporter(cfg config, log *logrus.Logger) error {
 	go func() {
 		<-ctx.Done()
 		log.Info("shutdown signal received; draining")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// WithoutCancel, not Background: ctx is already cancelled by the time we
+		// get here, so deriving from it directly would hand Shutdown an expired
+		// context and abort the drain immediately.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
