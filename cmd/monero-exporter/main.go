@@ -13,8 +13,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -66,7 +69,9 @@ resulting state on a Prometheus scrape endpoint.`,
 				return fmt.Errorf("invalid log-level %q: %w", cfg.LogLevel, err)
 			}
 			log.SetLevel(lvl)
-			return runExporter(cfg, log)
+			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer stop()
+			return runExporter(ctx, cfg, log)
 		},
 	}
 
