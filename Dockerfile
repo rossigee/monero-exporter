@@ -3,9 +3,10 @@ RUN apk --no-cache add ca-certificates tzdata && \
     adduser -D -g '' -s /sbin/nologin appuser
 
 FROM scratch
+ARG TARGETPLATFORM
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=certs /etc/passwd /etc/passwd
-COPY monero-exporter /usr/bin/monero-exporter
+COPY $TARGETPLATFORM/monero-exporter /usr/bin/monero-exporter
 
 USER appuser
 EXPOSE 9000
